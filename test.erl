@@ -3,8 +3,8 @@
 
 main() ->
 	ClusterPid = spawn(middleware, start, []),
-	io:format("Successfully started the cluster on ~p ~n~n", [ClusterPid]).
-	% TODO
-	% add_node(ClusterPid)
-	% NodeId = ...
-	% remove_node(ClusterPid, NodeId)
+	io:format("Successfully started the cluster on ~p ~n~n", [ClusterPid]),
+	middleware:add_node(ClusterPid),
+	middleware:add_node(ClusterPid),
+	middleware:add_node(ClusterPid),
+	middleware:stop_cluster(ClusterPid).
