@@ -18,4 +18,18 @@ main() ->
 	middleware:remove_node(ClusterPid, lists:last(Pids)),
 	io:format("Nodes: ~w ~n", [middleware:get_node_names(ClusterPid)]),
 	io:format("Pids: ~w ~n~n", [middleware:get_node_pids(ClusterPid)]),
-	middleware:stop_cluster(ClusterPid).
+
+	middleware:execute_job(ClusterPid, example_tasks, loop_with_timeout, [100, 1000]).
+
+	% middleware:stop_cluster(ClusterPid).
+
+
+
+	% erl -sname node1
+	% erl -sname node2
+	% ...
+	% for example node 2 does
+	% register(alala, Pid)
+	% then guy can send message:
+	% {alala, node1@host} ! message
+	% 
