@@ -3,7 +3,7 @@
 		 init_comp_unit/1,
 		 init_local_agent/2,
 		 master_agent_loop/3,
-		 empty_computation_loop/1,
+		 computation_loop/1,
 		 add_node/1,
 		 local_agent_loop/4,
 		 connect_local_agents/2,
@@ -15,7 +15,8 @@
 		 get_names/1,
 		 get_node_names/1,
 		 get_node_pids/1,
-		 execute_job/4
+		 execute_job/2,
+		 elect_least_busy_node/2
 		]).
 
 % At the beginning we have master agent 
@@ -29,19 +30,17 @@ start() ->
 	ComputingUnit = init_comp_unit(MyPid),
 	register(master_comp_node, ComputingUnit),
 	io:format("Corresponding computing unit ~p~n", [ComputingUnit]),
-	JobQueue = queue:new(),
-	master_agent_loop(ComputingUnit, [], JobQueue).
+	master_agent_loop(ComputingUnit, [], queue:new()).
 	
 init_local_agent(Master, AgentsAlive) ->
 	ComputingUnit = init_comp_unit(self()),
 	Name = list_to_atom(lists:flatten(io_lib:format("comp_node_~p", [next_node_id(AgentsAlive)]))),
 	register(Name, ComputingUnit),
 	io:format("with computing unit at ~p ~n", [ComputingUnit]),
-	JobQueue = queue:new(),
-	local_agent_loop(ComputingUnit, Master, AgentsAlive, JobQueue).
+	local_agent_loop(ComputingUnit, Master, AgentsAlive, queue:new()).
 
 init_comp_unit(AgentPid) -> 
-	spawn(middleware, empty_computation_loop, [AgentPid]). 
+	spawn(middleware, computation_loop, [AgentPid]). 
 
 master_agent_loop(ComputingUnit, AgentsAlive, JobQueue) -> 
 	receive
@@ -97,19 +96,48 @@ master_agent_loop(ComputingUnit, AgentsAlive, JobQueue) ->
 		{ list_pids, Pid } ->
 			Pid ! AgentsAlive,
 			master_agent_loop(ComputingUnit, AgentsAlive, JobQueue);
-		{ n_jobs_request } ->
-			io:format("Me (~p) receive request!!!~n", [self()]),
-			self() ! { n_jobs, self(), queue:len(JobQueue) },
+		{ find_node_to_execute, Job} ->
+			N = queue:len(JobQueue),
+			Pid = elect_least_busy_node(N, AgentsAlive),
+			io:format("Node ~p will execute a job~n", [Pid]),
+			case Pid == self() of
+				true ->
+					case queue:is_empty(JobQueue) of
+						true -> 
+							ComputingUnit ! { new_job, Job };
+						false -> ok
+					end,
+					NewQueue = queue:in(Job, JobQueue),
+					master_agent_loop(
+								ComputingUnit,
+								AgentsAlive,
+								NewQueue);
+				false -> 
+					Pid ! { execute_job, Job },
+					master_agent_loop(
+								ComputingUnit,
+								AgentsAlive,
+								JobQueue)
+			end,
 			master_agent_loop(ComputingUnit, AgentsAlive, JobQueue);
-		{ execute, Module, Func, Args} ->
-			Pid = elect_least_busy_node([self(), AgentsAlive]),
-			Pid ! { execute, Module, Func, Args },
-			master_agent_loop(ComputingUnit, AgentsAlive, JobQueue);
+		% { execute_job, Job} ->
+			
+		{ finished, Result } ->
+			io:format("Computation Result: ~p~n", [Result]),
+			NewQueue = queue:drop(JobQueue),
+			case queue:is_empty(NewQueue) of
+				false -> 
+					NewJob = queue:get(NewQueue),
+					ComputingUnit ! { new_job, NewJob };
+				true -> ok
+			end,
+			master_agent_loop(ComputingUnit, AgentsAlive, NewQueue);
 		stop -> 
 			io:format("Stopping the cluster...~n", []),
 			io:format("-----------------------~n", []),
 			stop_nodes(AgentsAlive),
 			unregister(master_node),
+			exit(ComputingUnit, "Kill the computing unit"),
 			unregister(master_comp_node),
 			io:format("Stopped ~p~n", [master_node])
 	end,
@@ -124,19 +152,51 @@ local_agent_loop(ComputingUnit, Master, AgentsAlive, JobQueue) ->
 			io:format("'~p' notified about removal of (~p) ~n", [self(), Node]),
 			local_agent_loop(ComputingUnit, Master, lists:delete(Node, AgentsAlive), JobQueue);
 		{ n_jobs_request } ->
-			io:format("Me (~p) receive request!!!~n", [self()]),
 			Master ! { n_jobs, self(), queue:len(JobQueue) },
 			local_agent_loop(ComputingUnit, Master, AgentsAlive, JobQueue);
+		{ execute_job, Job} ->
+			case queue:is_empty(JobQueue) of
+				true -> 
+					ComputingUnit ! { new_job, Job };
+				false -> ok				
+			end,
+			NewQueue = queue:in(Job, JobQueue),
+			local_agent_loop(
+						ComputingUnit,
+						Master,
+						AgentsAlive,
+						NewQueue);
+		{ finished, Result } ->
+			io:format("Computation Result: ~p~n", [Result]),
+			NewQueue = queue:drop(JobQueue),
+			case queue:is_empty(NewQueue) of
+				false -> 
+					NewJob = queue:get(NewQueue),
+					ComputingUnit ! { new_job, NewJob };
+				true -> ok
+			end,
+			local_agent_loop(
+				ComputingUnit,
+				Master,
+				AgentsAlive,
+				NewQueue);
 		stop -> 
 			{ _, Name } = process_info(ComputingUnit, registered_name),
+			exit(ComputingUnit, "Kill the computing unit"),
 			unregister(Name),
 			ok
 	end,
 	local_agent_loop(ComputingUnit, Master, AgentsAlive, JobQueue).
 
 
-empty_computation_loop(AgentPid) ->
-	empty_computation_loop(AgentPid).
+computation_loop(AgentPid) ->
+	receive
+		{ new_job, {Module, Func, Args} } ->
+			Result = erlang:apply(Module, Func, Args),
+			AgentPid ! { finished, Result },
+			computation_loop(AgentPid)
+	end,
+	computation_loop(AgentPid).
 
 
 % TODO: Later when the nodes can be remote - add ping and all this things
@@ -179,11 +239,9 @@ get_names([Pid | T]) ->
 	[Name] ++ get_names(T).
 
 send_election_request([ H ]) ->
-	io:format("SEND TOOO ~p~n", [H]),
 	H ! { n_jobs_request };
 
 send_election_request([H | T]) ->
-	io:format("SEND TOOO ~p~n", [H]),
 	H ! { n_jobs_request },
 	send_election_request(T).
 
@@ -198,21 +256,25 @@ min_length_queue(_, [H | T]) ->
 	min_length_queue(H, T).
 
 
-elect_least_busy_node(AgentsAlive) ->
+elect_least_busy_node(MasterQueue, AgentsAlive) ->
 	send_election_request(AgentsAlive),
 	QueuesLenght = lists:map(fun(Pid) -> 
 			receive
 				{ n_jobs, Pid, N } -> 
-					io:format("Process ~p has ~p tasks in the queue~n", [Pid, N]),
 					{Pid, N}
 				after 1000 -> 
-					io:format("Cannot recieve anything!~n"),
-					ok
+					io:format("Cannot recieve anything!~n")
 			end
 		end,
 		AgentsAlive),
-
-	{ Pid, _ } = min_length_queue(QueuesLenght),
+	% We append master node Pid at the end of the list
+	% so that if both master and other node will have the same
+	% min number of jobs in queue, the job will be sent to other
+	% processor, cause we don't want to bother master node to much
+	% cause he is already rather busy
+	QueuesLenghtWithMaster = lists:append([[{ self(), MasterQueue }], QueuesLenght]),
+	io:format("Queue lengths for nodes: ~w~n", [QueuesLenghtWithMaster]),
+	{ Pid, _ } = min_length_queue(QueuesLenghtWithMaster),
 	Pid.
 
 % util for generating the tokens to register the processes
@@ -246,6 +308,5 @@ get_node_pids(Master) ->
 remove_node(Master, Pid) ->
 	Master ! { remove, Pid }.
 
-execute_job(Master, Module, Func, Args) ->
-	io:format("Sending request to execute the job to ~p...~n", [Master]),
-	Master ! { execute, Module, Func, Args }.
+execute_job(Master, Job) ->
+	Master ! { find_node_to_execute, Job }.

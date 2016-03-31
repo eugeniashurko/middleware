@@ -1,5 +1,13 @@
 -module(test).
--export([main/0]).
+-export([main/0,
+		 flood_cluster/3]).
+
+flood_cluster(Pid, Job, 1) ->
+	middleware:execute_job(Pid, Job);
+flood_cluster(Pid, Job, N) ->
+	middleware:execute_job(Pid, Job),
+	flood_cluster(Pid, Job, N - 1).
+	
 
 main() ->
 	ClusterPid = spawn(middleware, start, []),
@@ -18,10 +26,7 @@ main() ->
 	middleware:remove_node(ClusterPid, lists:last(Pids)),
 	io:format("Nodes: ~w ~n", [middleware:get_node_names(ClusterPid)]),
 	io:format("Pids: ~w ~n~n", [middleware:get_node_pids(ClusterPid)]),
-
-	middleware:execute_job(ClusterPid, example_tasks, loop_with_timeout, [100, 1000]).
-
-	% middleware:stop_cluster(ClusterPid).
+	flood_cluster(ClusterPid, {example_tasks, loop_with_timeout, [4, 10000]}, 100).
 
 
 
