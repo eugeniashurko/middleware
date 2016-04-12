@@ -7,7 +7,9 @@
 		 get_nodes/1,
 		 pop_node/1,
 		 remove_node/2,
-		 execute_job/2]).
+		 execute_job/2,
+		 print_history/1,
+		 show_nodes_history/1]).
 
 % Interface functions (IMPLEMENTING MONITOR)
 
@@ -64,14 +66,14 @@ stop_cluster(MasterNode) ->
 get_nodes(MasterNode) -> 
 	case net_adm:ping(MasterNode) of
 		pong ->
-			{ agent, MasterNode } ! { list_nodes, node() };
+			{ agent, MasterNode } ! { list_nodes, node() },
+			receive
+				L -> lists:append([L, [MasterNode]])
+			after 1000 -> 
+				io:format("Didn't get any list~n", [])
+			end;
 		pang ->
 			io:format("Node ~p is not reachable", [MasterNode])
-	end,
-	receive
-		L -> lists:append([L, [MasterNode]])
-	after 1000 -> 
-		io:format("Didn't get any list~n", [])
 	end.
 
 pop_node(MasterNode) ->
@@ -97,3 +99,29 @@ execute_job(MasterNode, Job) ->
 		pang ->
 			io:format("Node ~p is not reachable", [MasterNode])
 	end.
+
+show_nodes_history(MasterNode) ->
+	case net_adm:ping(MasterNode) of
+		pong ->
+			{ agent, MasterNode} ! { get_nodes_history, node() },
+			receive
+				History ->
+					io:format("Cluster status:~n", []),
+					io:format("================~n", []),
+					io:format("Master Node: ~p~n", MasterNode),
+					print_history(History)
+				after 1000 ->
+					io:format("Coundn't receive nodes history!~n", [])
+			end;
+		pang ->
+			io:format("Node ~p is not reachable~n", [MasterNode])
+	end.
+
+
+print_history([ ]) -> ok;
+print_history([{ Node, Status }]) ->
+	io:format("--- ~p : ~p~n", [Node, Status]),
+	ok;
+print_history([{ Node, Status } | T]) ->
+	io:format("--- ~p : ~p~n", [Node, Status]),
+	print_history(T).
