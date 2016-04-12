@@ -25,5 +25,8 @@ main() ->
 	% monitor:remove_node(MasterNode, 'node3_1@johnpaul-ENS-Workstation'),
 	% io:format("Nodes: ~w ~n", [monitor:get_nodes(MasterNode)]),
 	flood_cluster(MasterNode, {example_tasks, loop_with_timeout, [4, 10000]}, 100),
+	timer:sleep(1000),
+	monitor:remove_node(MasterNode, 'node3_1@johnpaul-ENS-Workstation'),
 	timer:sleep(10000),
+	monitor:show_nodes_history(MasterNode),
 	monitor:stop_cluster(MasterNode).
