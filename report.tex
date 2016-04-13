@@ -60,45 +60,56 @@ Project report
 
 In this project a middleware for distributed system was implemented. The main function of the middleware is to manage cluster consisting of connected remote nodes. This cluster can be used for handling big load of small tasks. 
 
-\textbf{Topology}. The remote nodes are connected into clique topology forming a fully connected network so that all nodes have direct links to other nodes. \emph{Why clique topology has been chosen?} Clique topology has an overhead in the number of  connection links, but at the same time it is highly fault tolerant. In case of crash of any node in the network, its topology does not change, and all nodes stay connected. Consider the performance requirements for our distributed system: we want a huge number of incoming small jobs to be distributed into our system efficiently. As master node has direct link to each node, it takes exactly one hop for master to send a message to any node. 
 
-\begin{center}
-	\begin{tikzpicture}
-		\node[draw,circle,inner sep=5pt,text width=1.5cm,color=red](Monitor1){ Monitor };
-		\begin{scope}[xshift=7cm]
-		 \MyFive{A}{-1}
-		\end{scope}
-		\draw[red] (Monitor1) -- (A-1);
-	\end{tikzpicture}
+\textbf{Topology}. The remote nodes are connected into clique topology forming a fully connected network so that all nodes have direct links to other nodes. \emph{Why clique topology has been chosen?} Clique topology has an overhead in the number of  connection links, but at the same time it is highly fault tolerant. In case of crash of any node in the network, its topology does not change, and all nodes stay connected. Consider the performance requirements for our distributed system: we want a huge number of incoming small jobs to be distributed into our system efficiently. As master node has direct link to each node, it takes exactly one hop for master to send a message to any node. In case of clique topology we do not need to broadcast a message, as well. \emph{Why don't consider a star topology?} In case of star topology if the master node dies, it becomes impossible to recover the system functioning. In case of master node crash in clique topology the network is still functioning, and upon detection of the crash of master node other nodes can, for example, elect new master among them and continue work, reporting to the system monitor that new master node has been chosen (so the entry point changed).
+
+On the figure below example of implemented clique topology is illustrated. 
+
+	\begin{center}
+		\begin{tikzpicture}
+			\node[draw,circle,inner sep=5pt,text width=1.5cm,color=red](Monitor1){ Monitor };
+			\begin{scope}[xshift=7cm]
+			 \MyFive{A}{-1}
+			\end{scope}
+			\draw[red] (Monitor1) -- (A-1);
+		\end{tikzpicture}
+	\end{center}
+
+To scale our system the following could be done: we can create multiple subclusters as previously described, and connect their master nodes with links, so that they can communicate and, for example, elect the least busy subcluster to exacute the tasks arriving from the side of monitor. 
+
+	\begin{center}
+		\begin{tikzpicture}
+			\MyFive{B}{2}
+			\begin{scope}[xshift=7cm]
+			 \MyFive{C}{2}
+			\end{scope}
+			\begin{scope}[xshift=-5cm, yshift=-4cm]
+			\node[draw,circle,inner sep=5pt,text width=1.5cm,color=red](Monitor2){ Monitor };
+			\end{scope}
+			\begin{scope}[yshift=-8cm]
+			 \MyFive{D}{0}
+			\end{scope}
+			\begin{scope}[xshift=7cm, yshift=-8cm]
+			 \MyFive{E}{0}
+			\end{scope}
+			\draw[green] (B-1) -- (C-1);
+			\draw[green] (D-1) -- (E-1);
+			\draw[green] (B-1) -- (D-1);
+			\draw[green] (C-1) -- (E-1);
+			\draw[green] (B-1) -- (E-1);
+			\draw[green] (D-1) -- (C-1);
+			\draw[red] (Monitor2) to[out=30, in=195] (B-1);
+			\draw[red] (Monitor2) to[out=5, in=-175] (C-1);
+			\draw[red] (Monitor2) to[out=-30, in=165] (D-1);
+			\draw[red] (Monitor2) to[out=-5, in=175] (E-1);
+		\end{tikzpicture}
 	
-	\begin{tikzpicture}
-		\MyFive{B}{2}
-		\begin{scope}[xshift=7cm]
-		 \MyFive{C}{2}
-		\end{scope}
-		\begin{scope}[xshift=-4cm, yshift=-4cm]
-		\node[draw,circle,inner sep=5pt,text width=1.5cm,color=red](Monitor1){ Monitor };
-		\end{scope}
-		\begin{scope}[yshift=-8cm]
-		 \MyFive{D}{0}
-		\end{scope}
-		\begin{scope}[xshift=7cm, yshift=-8cm]
-		 \MyFive{E}{0}
-		\end{scope}
-		\draw[green] (B-1) -- (C-1);
-		\draw[green] (D-1) -- (E-1);
-		\draw[green] (B-1) -- (D-1);
-		\draw[green] (C-1) -- (E-1);
-		\draw[green] (B-1) -- (E-1);
-		\draw[green] (D-1) -- (C-1);
-	\end{tikzpicture}
-	
-\end{center}
-\textbf{Structure}.
+	\end{center}
 
-Implemented module consists of two submodules: \texttt{agents.erl} and \texttt{monitor.erl}
 
-Fault tolerant
+\textbf{Middleware Structure}. Implemented module consists of two submodules: \texttt{agents} and \texttt{monitor}. Submodule \texttt{monitor} implements the client interface for managing the system: start/stop cluster, add/remove new node, send job to execute, get cluster statistics. Submodule \texttt{agents} contains the deamons that should be compiled and launched on nodes in order to start up implemented system. 
+
+Implementation details and examples of usage are presented in the sections below.
 
 \section{Agent deployment}
 \subsection{Start/stop a cluster}
@@ -112,6 +123,9 @@ Fault tolerant
 \subsection{Nodes alive}
 \subsection{Death of master node}
 \section{Examples and applications}
+
+
+Fault tolerant
 
 Couple of examples where implemented. Script that deploy the middleware on the nodes, so they are ready to recieve the job.
 
